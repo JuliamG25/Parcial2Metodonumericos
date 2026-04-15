@@ -100,9 +100,12 @@ class App(tk.Tk):
             value="gauss_seidel",
         ).pack(anchor=tk.W, pady=(0, 12))
 
-        ttk.Label(der, text="Tolerancia:").pack(anchor=tk.W)
-        self.var_tol = tk.StringVar(value="0.0001")
-        ttk.Entry(der, textvariable=self.var_tol, width=18).pack(anchor=tk.W, pady=(0, 8))
+        ttk.Label(der, text="Tolerancia error absoluto:").pack(anchor=tk.W)
+        self.var_tol_abs = tk.StringVar(value="0.0001")
+        ttk.Entry(der, textvariable=self.var_tol_abs, width=18).pack(anchor=tk.W, pady=(0, 4))
+        ttk.Label(der, text="Tolerancia error porcentual (% de ‖x‖∞):").pack(anchor=tk.W)
+        self.var_tol_pct = tk.StringVar(value="1")
+        ttk.Entry(der, textvariable=self.var_tol_pct, width=18).pack(anchor=tk.W, pady=(0, 8))
 
         ttk.Label(der, text="Iteraciones máximas:").pack(anchor=tk.W)
         self.var_max_iter = tk.StringVar(value="100")
@@ -211,22 +214,26 @@ class App(tk.Tk):
     def _calcular(self) -> None:
         try:
             A, b, x0 = self._leer_sistema()
-            tol = self._leer_float(self.var_tol.get(), "tolerancia")
+            tol_abs = self._leer_float(self.var_tol_abs.get(), "tolerancia absoluta")
+            tol_pct = self._leer_float(self.var_tol_pct.get(), "tolerancia porcentual")
             max_iter = int(self.var_max_iter.get())
             dec = int(self.var_decimales.get())
         except ValueError as e:
             messagebox.showerror("Error", str(e))
             return
 
-        if tol <= 0:
-            messagebox.showerror("Error", "La tolerancia debe ser positiva.")
+        if tol_abs <= 0:
+            messagebox.showerror("Error", "La tolerancia absoluta debe ser positiva.")
+            return
+        if tol_pct <= 0:
+            messagebox.showerror("Error", "La tolerancia porcentual debe ser positiva.")
             return
         if max_iter < 1:
             messagebox.showerror("Error", "Las iteraciones máximas deben ser ≥ 1.")
             return
 
         metodo = self.var_metodo.get()
-        sol, hist, err_msg = ejecutar_metodo(metodo, A, b, x0, tol, max_iter)
+        sol, hist, err_msg = ejecutar_metodo(metodo, A, b, x0, tol_abs, tol_pct, max_iter)
 
         self.texto.delete("1.0", tk.END)
         if err_msg:
@@ -236,29 +243,38 @@ class App(tk.Tk):
         fmt = f"{{:.{dec}f}}"
         nombre = "Jacobi" if metodo == "jacobi" else "Gauss-Seidel"
         self.texto.insert(tk.END, f"Método: {nombre}\n")
-        self.texto.insert(tk.END, f"Tolerancia: {tol}  |  Máx. iteraciones: {max_iter}  |  Decimales: {dec}\n\n")
+        self.texto.insert(
+            tk.END,
+            "Errores entre iterados: E_abs = ‖x⁽ᵏ⁾ − x⁽ᵏ⁻¹⁾‖∞  |  "
+            "E_% = (E_abs / ‖x⁽ᵏ⁾‖∞) × 100\n",
+        )
+        self.texto.insert(
+            tk.END,
+            f"Parada: E_abs < {tol_abs}  y  E_% < {tol_pct}%  |  "
+            f"Máx. iteraciones: {max_iter}  |  Decimales: {dec}\n\n",
+        )
 
         if hist:
-            ultimo_err = hist[-1][2]
-            convergio = ultimo_err < tol
+            ult_abs, ult_pct = hist[-1][2], hist[-1][3]
+            convergio = ult_abs < tol_abs and ult_pct < tol_pct
             self.texto.insert(
                 tk.END,
-                "Estado: convergió dentro de la tolerancia.\n\n"
+                "Estado: convergió (se cumplen ambas tolerancias).\n\n"
                 if convergio
-                else "Estado: se alcanzó el máximo de iteraciones sin cumplir la tolerancia (revisa datos o aumenta iteraciones).\n\n",
+                else "Estado: se alcanzó el máximo de iteraciones sin cumplir ambas tolerancias.\n\n",
             )
 
         self.texto.insert(tk.END, "Solución aproximada x:\n")
         for i, val in enumerate(sol):
             self.texto.insert(tk.END, f"  x{i + 1} = {fmt.format(val)}\n")
         self.texto.insert(tk.END, "\n--- Iteraciones ---\n")
-        self.texto.insert(tk.END, f"{'Iter':>6}  {'Error (‖·‖∞)':>18}  ")
+        self.texto.insert(tk.END, f"{'Iter':>6}  {'E_abs':>14}  {'E_%':>12}  ")
         for j in range(len(sol)):
             self.texto.insert(tk.END, f"{'x' + str(j + 1):>14}  ")
         self.texto.insert(tk.END, "\n")
 
-        for it, xv, er in hist:
-            self.texto.insert(tk.END, f"{it:6d}  {fmt.format(er):>18}  ")
+        for it, xv, e_abs, e_pct in hist:
+            self.texto.insert(tk.END, f"{it:6d}  {fmt.format(e_abs):>14}  {fmt.format(e_pct):>12}  ")
             for val in xv:
                 self.texto.insert(tk.END, f"{fmt.format(val):>14}  ")
             self.texto.insert(tk.END, "\n")
